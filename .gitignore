@@ -68,3 +68,4 @@ crashlytics-build.properties
 Assets/hdri/winter_evening_8k.hdr.meta
 Assets/hdri/the_sky_is_on_fire_8k.hdr.meta
 *.hdr
+*.mov

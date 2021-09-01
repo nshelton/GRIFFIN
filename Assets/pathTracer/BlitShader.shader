@@ -45,7 +45,6 @@
 			float4 frag(v2f i) : SV_Target
 			{
 				float2 uv = i.uv;
-				uv.y = 1.0 - uv.y;
 				float4 thisPixel = tex2D(_MainTex, uv);
 
 				return  float4(saturate(thisPixel.rgb), 1.0);

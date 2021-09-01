@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Recorder;
 using UnityEngine;
+using System.IO;
 
 [ExecuteInEditMode]
 public class RayTracing : MonoBehaviour
@@ -13,7 +14,7 @@ public class RayTracing : MonoBehaviour
  
     public Texture SkyboxTexture;
     public Material _addMaterial;
-
+    public Material _copyMaterial;
     public bool Integrate;
     public bool Reproject;
 
@@ -24,17 +25,18 @@ public class RayTracing : MonoBehaviour
     [Range(0,1)] public float Threshold;
     [Range(0,2048)] public int Steps;
     [Range(0,1)] public float _StepRatio;
-    [Range(0,5)] public float Exposure;
     public Color SkyColorA;
     public Color SkyColorB;
     public Vector3 Emission;
     [Range(0,10)] public int Palette;
     public Vector2 ColorParam;
-    public float Gamma;
+    [Range(0,5)]public float Gamma;
+    [Range(0,1)] public float Saturation;
+    [Range(0,5)] public float Exposure;
 
     [Header("Fractal Params")]
     public Transform m_quaternionTransform;
-    [Range(1,15)] public float Levels;
+    [Range(1,20)] public float Levels;
     public Vector4 ParamA;
     public Vector4 ParamB;
     public Vector4 ParamC;
@@ -56,7 +58,7 @@ public class RayTracing : MonoBehaviour
     private RenderTexture _targetDepth;
     private RenderTexture _targetB;
     private RenderTexture _targetBDepth;
-    private RenderTexture _converged;
+    public RenderTexture _converged;
     private RenderTexture _confidenceConverged;
     private RenderTexture _confidenceConvergedLastFrame;
     
@@ -66,7 +68,10 @@ public class RayTracing : MonoBehaviour
     float _renderedFrameNum = 0;
     Matrix4x4 m_worldToLastFrame;
     RenderTexture _convergedLastFrame;
+    public RenderTexture outputFrame;
     //CustomCameraCapture m_capture;
+    Texture2D _pngTexture;
+    RenderTexture _pngRenderTexture;
 
     public RenderTexture Image
     {
@@ -78,18 +83,11 @@ public class RayTracing : MonoBehaviour
 
     private void Awake()
     {
-      /*  m_capture = GetComponent<CustomCameraCapture>();
-        if (!Record)
+        if (Record)
         {
-            m_capture.enabled = false;
-
-        } else
-        {
-            m_capture.enabled = true;
-            m_capture.Initialize();
+            Time.timeScale = 1f/FrameSamples;
         }
 
-        */
         _camera = GetComponent<Camera>();
         _transformsToWatch.Add(transform);
     }
@@ -152,13 +150,14 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetVector("_EmisisonRange", Emission);
         RayTracingShader.SetVector("_ColorParam", ColorParam);
         RayTracingShader.SetVector("_Quaternion", new Vector4(
-            m_quaternionTransform.rotation.x,
-            m_quaternionTransform.rotation.y,
-            m_quaternionTransform.rotation.y,
-            m_quaternionTransform.rotation.w));
+            m_quaternionTransform.localRotation.x,
+            m_quaternionTransform.localRotation.y,
+            m_quaternionTransform.localRotation.y,
+            m_quaternionTransform.localRotation.w));
         RayTracingShader.SetFloat("_StepRatio", _StepRatio);
 
         RayTracingShader.SetFloat("_Palette", Palette);
+        RayTracingShader.SetFloat("_Saturation", Saturation);
 
         RayTracingShader.SetFloat("_Specular", Specular);
         RayTracingShader.SetFloat("_Smoothness", Smoothness);
@@ -169,6 +168,7 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetFloat("_RNG", Random.value);
         RayTracingShader.SetFloat("_TFAR", _camera.farClipPlane);
 
+
         RayTracingShader.SetFloat("_SPP", SPP);
         RayTracingShader.SetFloat("_Bounces", Bounces);
 
@@ -177,6 +177,7 @@ public class RayTracing : MonoBehaviour
         _addMaterial.SetTexture("_Depth", _targetDepth);
 
     }
+
 
     private void InitRenderTexture()
     {
@@ -195,6 +196,7 @@ public class RayTracing : MonoBehaviour
             // Get a render target for Ray Tracing
             _target = new RenderTexture(Screen.width, Screen.height, 0,
                 RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+
             _target.enableRandomWrite = true;
             _target.Create();
             _targetDepth = new RenderTexture(_target);
@@ -211,8 +213,9 @@ public class RayTracing : MonoBehaviour
             _confidenceConverged.Create();
             _confidenceConvergedLastFrame = new RenderTexture(_target);
             _confidenceConvergedLastFrame.Create();
-            
-
+            _pngTexture = new Texture2D(Screen.width, Screen.height);
+            _pngRenderTexture = new RenderTexture(Screen.width, Screen.height, 0, RenderTextureFormat.ARGB32);
+            _pngRenderTexture.Create();
             // Reset sampling
             _currentSample = 0;
         }
@@ -238,7 +241,6 @@ public class RayTracing : MonoBehaviour
         projection = _camera.nonJitteredProjectionMatrix;
         invProjection = projection.inverse;
 
-  
         // Make sure we have a current render target
         InitRenderTexture();
 
@@ -275,11 +277,12 @@ public class RayTracing : MonoBehaviour
             Graphics.Blit(_target, _converged, _addMaterial);
        }
 
-       Graphics.Blit(_converged, destination);
-        
+        Graphics.Blit(_converged, _pngRenderTexture, _copyMaterial);
 
+       Graphics.Blit(_pngRenderTexture, destination);
     }
-
+ 
+      
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
     {
         SetShaderParameters();
@@ -294,6 +297,19 @@ public class RayTracing : MonoBehaviour
         {
             // This is where we drop in the frame 
             //m_capture.AddFrame(_converged);
+                
+            //then Save To Disk as PNG
+            RenderTexture.active = _pngRenderTexture;
+            _pngTexture.ReadPixels(new Rect(0, 0, _pngRenderTexture.width, _pngRenderTexture.height), 0, 0);
+            _pngTexture.Apply();
+
+            byte[] bytes = _pngTexture.EncodeToPNG();
+            var dirPath = Application.dataPath + "/../frames/";
+            if(!Directory.Exists(dirPath)) {
+                Directory.CreateDirectory(dirPath);
+            }
+            File.WriteAllBytes(dirPath + _renderedFrameNum + ".png", bytes);
+
             _currentSample = 0;
             _renderedFrameNum++;
             if (_renderedFrameNum > numFrames)
