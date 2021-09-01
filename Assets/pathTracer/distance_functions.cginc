@@ -285,6 +285,43 @@ float3 julia(float3 p)
 
     return float3(d, t);
 }
+float qLength2(in float4 q) { return dot(q, q); }
+
+float juliaTrap(in float3 p)
+{
+    float4 z = float4(p, 0.0);
+    float dz2 = 1.0;
+    float m2 = 0.0;
+    float n = 0.0;
+    float o = 1e10;
+
+    for (int i = 0; i < _LEVELS; i++)
+    {
+        // z' = 3z² -> |z'|² = 9|z²|²
+        dz2 *= 9.0 * qLength2(qSquare(z));
+
+        // z = z³ + c		
+        z = qCube(z) + u_paramB;
+
+        // stop under divergence		
+        m2 = qLength2(z);
+
+        // orbit trapping : https://iquilezles.org/www/articles/orbittraps3d/orbittraps3d.htm
+        o = min(o, length(z.xz - float2(0.45, 0.55)) - 0.1);
+
+        // exit condition
+        if (m2 > 256.0) break;
+        n += 1.0;
+    }
+
+    // sdf(z) = log|z|·|z|/|dz| : https://iquilezles.org/www/articles/distancefractals/distancefractals.htm
+    float d = 0.25 * log(m2) * sqrt(m2 / dz2);
+
+    d = min(o, d);
+
+    return float2(d, n);
+}
+
 
 
 

@@ -75,7 +75,7 @@ float opSmoothIntersection(float d1, float d2, float k) {
 float2 DE(float3 p)
 {
     // return mandelbulb(p);
-    float2 d =  julia(p);
+    float2 d = juliaTrap(p);
     float d2 = p.y - u_paramD.x; // + d.y * u_paramD.y;
 
     return float2(max(d.x, d2), d.y);
@@ -92,11 +92,22 @@ float3 estimateNormal(in float3 pos)
         DE(pos + eps.yxy).x - DE(pos - eps.yxy).x,
         DE(pos + eps.yyx).x - DE(pos - eps.yyx).x));
 }
-
+/*
 float3 getNormal(in float3 p)
 {
 
     float2 e = float2(thresh(p), -thresh(p));
+    return normalize(
+        e.xyy * DE(p + e.xyy).x +
+        e.yyx * DE(p + e.yyx).x +
+        e.yxy * DE(p + e.yxy).x +
+        e.xxx * DE(p + e.xxx).x);
+}
+*/
+float3 getNormal(in float3 p)
+{
+
+    const float2 e = float2(1.0, -1.0) * 0.5773 * _Threshold;
     return normalize(
         e.xyy * DE(p + e.xyy).x +
         e.yyx * DE(p + e.yyx).x +
@@ -243,6 +254,10 @@ RayHit MarchTrace(Ray ray)
     bool hit = false;
     int i = 0;
 
+    float lt = 0.0;
+    float lh = 0.0;
+
+
     for (; i < 2048; i++)
     {
         if (i > _Steps || (_Bounces <=1 && i > 100))
@@ -250,13 +265,17 @@ RayHit MarchTrace(Ray ray)
 
         pos = ray.origin + ray.direction * t;
         dd = DE(pos);
+ 
+        lt = t;
+        lh = dd.x;
+    
         t += dd.x * _StepRatio;
 
         if (dd.x < _Threshold)
         {
 
             hit = true;
-            t -= _Threshold;
+           
             break;
         }
 
@@ -264,7 +283,7 @@ RayHit MarchTrace(Ray ray)
             break;
     }
 
- 
+    if (lt > _Threshold/2 && dd.x > 0.0) t = lt - lh * (t - lt) / (dd.x - lh);
 
     if (hit)
     {
@@ -370,10 +389,10 @@ float3 Shade(inout Ray ray, RayHit hit)
  
         // Sample the skybox and write it
         float theta = acos(ray.direction.y) / -PI;
-        float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
-      return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+        //float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+      //return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
 
-      // return  lerp( _SkyColorA, _SkyColorB, 0.5 + 0.5 * theta) ;// *pow(max(0, dot(ray.direction, float3(0, -1, 0))), 4);
+       return  lerp( _SkyColorA, _SkyColorB, 0.5 + 0.5 * theta) ;// *pow(max(0, dot(ray.direction, float3(0, -1, 0))), 4);
       // return float3(0.5 + 0.5 * (ray.direction));
     }
 }
