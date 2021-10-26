@@ -15,6 +15,7 @@ public class RayTracing : MonoBehaviour
     public Texture SkyboxTexture;
     public Material _addMaterial;
     public Material _copyMaterial;
+    public Material _tonemapper;
     public bool Integrate;
     public bool Reproject;
 
@@ -30,9 +31,9 @@ public class RayTracing : MonoBehaviour
     public Vector3 Emission;
     [Range(0,10)] public int Palette;
     public Vector2 ColorParam;
-    [Range(0,5)]public float Gamma;
+    [Range(0,1)]public float Gamma;
     [Range(0,1)] public float Saturation;
-    [Range(0,5)] public float Exposure;
+    [Range(0,3)] public float Exposure;
 
     [Header("Fractal Params")]
     public Transform m_quaternionTransform;
@@ -83,6 +84,7 @@ public class RayTracing : MonoBehaviour
 
     private void Awake()
     {
+        Time.timeScale = 1;
         if (Record)
         {
             Time.timeScale = 1f/FrameSamples;
@@ -149,11 +151,15 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetVector("_SkyColorB", SkyColorB);
         RayTracingShader.SetVector("_EmisisonRange", Emission);
         RayTracingShader.SetVector("_ColorParam", ColorParam);
-        RayTracingShader.SetVector("_Quaternion", new Vector4(
+        if (m_quaternionTransform != null)
+        {
+            RayTracingShader.SetVector("_Quaternion", new Vector4(
             m_quaternionTransform.localRotation.x,
             m_quaternionTransform.localRotation.y,
             m_quaternionTransform.localRotation.y,
             m_quaternionTransform.localRotation.w));
+        }
+        
         RayTracingShader.SetFloat("_StepRatio", _StepRatio);
 
         RayTracingShader.SetFloat("_Palette", Palette);
@@ -173,8 +179,11 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetFloat("_Bounces", Bounces);
 
         _addMaterial.SetFloat("_Sample", _currentSample);
-        _addMaterial.SetFloat("_Exposure", Exposure);
+
         _addMaterial.SetTexture("_Depth", _targetDepth);
+
+        _tonemapper.SetFloat("_Exposure", Exposure);
+        _tonemapper.SetFloat("_Gamma", Gamma);
 
     }
 
@@ -277,9 +286,9 @@ public class RayTracing : MonoBehaviour
             Graphics.Blit(_target, _converged, _addMaterial);
        }
 
-        Graphics.Blit(_converged, _pngRenderTexture, _copyMaterial);
+      //  Graphics.Blit(_converged, _pngRenderTexture, _copyMaterial);
 
-       Graphics.Blit(_pngRenderTexture, destination);
+       Graphics.Blit(_converged, destination, _tonemapper);
     }
  
       
@@ -322,6 +331,6 @@ public class RayTracing : MonoBehaviour
 
     private void OnValidate()
     {
-        _currentSample = 0;
+        //_currentSample = 0;
     }
 }

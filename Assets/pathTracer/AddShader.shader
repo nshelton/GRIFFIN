@@ -42,7 +42,6 @@
 			sampler2D _Depth;
 			float4 _MainTex_TexelSize;
 			float _Sample;
-			float _Exposure;
 
 			float4 frag(v2f i) : SV_Target
 			{
@@ -52,13 +51,8 @@
 				thisPixel.rgb = max(thisPixel.rgb, (float3)0.0);
 
 				float alpha = 1.0f / (_Sample + 1.0f);
-				if (thisPixel.a == 0)
-				{
-					alpha = 0;
-					
-				}
 				
-				return  float4(_Exposure * (thisPixel.rgb), alpha);
+				return  float4(thisPixel.rgb, alpha);
 			}
 			ENDCG
 		}
