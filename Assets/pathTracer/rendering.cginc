@@ -33,13 +33,13 @@ float3 randomHemisphereDir(float3 dir, float i)
 	float3 v = randomSphereDir( float2(rand(i+1.), rand(i+2.)) );
 	return v * sign(dot(v, dir));
 }
-
+ 
 float ambientOcclusion(in float3 p, in float3 n)
 {
 
-    float maxDist = 0.5; // _RenderParam.y;
-    float falloff = 2.0; //_RenderParam.z;
-	const int nbIte = 1;
+    float maxDist = 0.1; // _RenderParam.y;
+    float falloff = 1.0; //_RenderParam.z;
+	const int nbIte = 50;
     const float nbIteInv = 1.0 / float(nbIte);
     const float rad = 1.0 - 1.0 * nbIteInv; //Hemispherical factor (self occlusion correction)
     
@@ -47,9 +47,10 @@ float ambientOcclusion(in float3 p, in float3 n)
     
     for( int i=0; i<nbIte; i++ ) {
 
-        float l = hash(float(i)) * maxDist;
+        float l = pow(hash(float(i) + _RNG + p.x + p.y ), 10) * maxDist;
         float3 rd = normalize(n + randomHemisphereDir(n, l ) * rad) * l; 
-        ao += (1.0 - max(DE( p + rd ).x, 0.0)) / maxDist * falloff;
+        ao += (l - max(DE( p + rd ).x, 0.0)) / maxDist * falloff;
+
     }
 	
     return clamp(ao * nbIteInv, 0., 1.);

@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.Recorder;
 using UnityEngine;
 using System.IO;
+using UnityEngine.Playables;
 
 [ExecuteInEditMode]
 public class RayTracing : MonoBehaviour
@@ -31,9 +32,9 @@ public class RayTracing : MonoBehaviour
     public Vector3 Emission;
     [Range(0,10)] public int Palette;
     public Vector2 ColorParam;
-    [Range(0,1)]public float Gamma;
+    [Range(0,6)]public float Gamma;
     [Range(0,1)] public float Saturation;
-    [Range(0,3)] public float Exposure;
+    [Range(0,6)] public float Exposure;
 
     [Header("Fractal Params")]
     public Transform m_quaternionTransform;
@@ -73,6 +74,11 @@ public class RayTracing : MonoBehaviour
     //CustomCameraCapture m_capture;
     Texture2D _pngTexture;
     RenderTexture _pngRenderTexture;
+    [SerializeField] PlayableDirector _timeline;
+    private float _customFixedDeltaTime = 1f/30f;
+
+    private bool _previz = false;
+
 
     public RenderTexture Image
     {
@@ -84,11 +90,15 @@ public class RayTracing : MonoBehaviour
 
     private void Awake()
     {
-        Time.timeScale = 1;
         if (Record)
         {
-            Time.timeScale = 1f/FrameSamples;
+            _customFixedDeltaTime =  1f / (30f *  (float)FrameSamples);
         }
+        else {            
+            _customFixedDeltaTime = 1f/30f;
+            QualitySettings.vSyncCount = 0; 
+            Application.targetFrameRate = 30;
+        } 
 
         _camera = GetComponent<Camera>();
         _transformsToWatch.Add(transform);
@@ -102,14 +112,19 @@ public class RayTracing : MonoBehaviour
     private void OnEnable()
     {
         _currentSample = 0;
-        Time.timeScale = 1f / FrameSamples;
     }
      
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.F12))
+        if (Input.GetKeyDown(KeyCode.Q))
         {
             ScreenCapture.CaptureScreenshot(Time.time + "-" + _currentSample + ".png");
+        }
+
+        if (Input.GetKeyDown(KeyCode.Z))
+        {
+            _previz = !_previz;
+            Bounces = _previz ? 1 : 2;
         }
 
         if (Input.GetKeyDown(KeyCode.Space))
@@ -137,8 +152,8 @@ public class RayTracing : MonoBehaviour
     private void SetShaderParameters()
     {
         RayTracingShader.SetTexture(0, "_SkyboxTexture", SkyboxTexture);
-        RayTracingShader.SetMatrix("_CameraToWorld", _camera.transform.localToWorldMatrix);
-        RayTracingShader.SetMatrix("_CameraInverseProjection", invProjection);
+        RayTracingShader.SetMatrix("_CameraToWorld", _camera.cameraToWorldMatrix);
+        RayTracingShader.SetMatrix("_CameraInverseProjection", _camera.projectionMatrix.inverse);
         RayTracingShader.SetVector("_PixelOffset", 1024f * new Vector2(Random.value, Random.value));
         RayTracingShader.SetFloat("_Seed", Random.value);
 
@@ -182,9 +197,15 @@ public class RayTracing : MonoBehaviour
 
         _addMaterial.SetTexture("_Depth", _targetDepth);
 
-        _tonemapper.SetFloat("_Exposure", Exposure);
-        _tonemapper.SetFloat("_Gamma", Gamma);
-
+        if (!_previz)
+        {
+            _tonemapper.SetFloat("_Exposure", Exposure);
+            _tonemapper.SetFloat("_Gamma", Gamma);
+        } else
+        {
+            _tonemapper.SetFloat("_Exposure", 1);
+            _tonemapper.SetFloat("_Gamma", 0.5f);
+        }
     }
 
 
@@ -230,26 +251,21 @@ public class RayTracing : MonoBehaviour
         }
     }
 
-
     public void ClearRendertexture(RenderTexture renderTexture)
     {
-
         RenderTexture rt = RenderTexture.active;
         RenderTexture.active = renderTexture;
         GL.Clear(true, true, Color.clear);
         RenderTexture.active = rt;
     }
 
-    Matrix4x4 projection;
-    Matrix4x4 invProjection;
-
-    private void Render(RenderTexture destination)
+    private void Render(RenderTexture destination, float time)
     {
-
-        //projection = GL.GetGPUProjectionMatrix(_camera.projectionMatrix, false);
-        projection = _camera.nonJitteredProjectionMatrix;
-        invProjection = projection.inverse;
-
+        if (Record)
+        {
+            _timeline.time = time;
+        }
+        
         // Make sure we have a current render target
         InitRenderTexture();
 
@@ -274,11 +290,12 @@ public class RayTracing : MonoBehaviour
             ReprojectionShader.SetTexture(0, "_ResultConfidence", _confidenceConverged);
             ReprojectionShader.SetFloat("_Sample", _currentSample);
 
-            ReprojectionShader.SetMatrix("_WorldToLastFrameProj", projection * m_worldToLastFrame);
-            ReprojectionShader.SetMatrix("_ThisFrameToWorld", _camera.transform.localToWorldMatrix);
+            ReprojectionShader.SetMatrix("_WorldToLastFrameProj", _camera.projectionMatrix * m_worldToLastFrame);
+            ReprojectionShader.SetMatrix("_ThisFrameToWorld", _camera.cameraToWorldMatrix);
             ReprojectionShader.SetMatrix("_WorldToLastFrame", m_worldToLastFrame);
-            
-            ReprojectionShader.SetMatrix("_CameraInverseProjection", invProjection);
+            ReprojectionShader.SetMatrix("_LastFrameToWorld", m_worldToLastFrame.inverse);
+ 
+            ReprojectionShader.SetMatrix("_CameraInverseProjection", _camera.projectionMatrix.inverse);
             ReprojectionShader.Dispatch(0, threadGroupsX, threadGroupsY, 1);
        }
        else 
@@ -288,25 +305,29 @@ public class RayTracing : MonoBehaviour
 
       //  Graphics.Blit(_converged, _pngRenderTexture, _copyMaterial);
 
+       Graphics.Blit(_converged, _pngRenderTexture, _tonemapper);
        Graphics.Blit(_converged, destination, _tonemapper);
     }
- 
-      
+
+    bool didSave = false;
+
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
     {
         SetShaderParameters();
-        
-        if (!Record || _currentSample < (float)FrameSamples * ExposurePercent)
-            Render(destination);
+        Debug.Log("_customFixedDeltaTime" +  _customFixedDeltaTime);
+        if (!Record || _currentSample < (float)FrameSamples * ExposurePercent) {
+            didSave = false;
+            Render(destination, _customFixedDeltaTime * (float)Time.frameCount);
+        }
 
         _currentSample++;
-        m_worldToLastFrame = _camera.transform.worldToLocalMatrix;
+        m_worldToLastFrame = _camera.worldToCameraMatrix;
 
-        if ((_currentSample > FrameSamples) && Record)
+        if ((_currentSample > FrameSamples) && Record && !didSave)
         {
-            // This is where we drop in the frame 
+            // This is where we would drop in the frame 
             //m_capture.AddFrame(_converged);
-                
+            
             //then Save To Disk as PNG
             RenderTexture.active = _pngRenderTexture;
             _pngTexture.ReadPixels(new Rect(0, 0, _pngRenderTexture.width, _pngRenderTexture.height), 0, 0);
@@ -318,7 +339,7 @@ public class RayTracing : MonoBehaviour
                 Directory.CreateDirectory(dirPath);
             }
             File.WriteAllBytes(dirPath + _renderedFrameNum + ".png", bytes);
-
+            didSave = true;
             _currentSample = 0;
             _renderedFrameNum++;
             if (_renderedFrameNum > numFrames)

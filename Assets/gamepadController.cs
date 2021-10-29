@@ -40,12 +40,12 @@ public class gamepadController : MonoBehaviour
 
         if ( Mathf.Abs(hAxis) > 0.001f)
         {
-            transform.Rotate(Vector3.down, hAxis * Time.deltaTime * _rotationSensitivity);
+            transform.Rotate(Vector3.down, -hAxis * Time.deltaTime * _rotationSensitivity);
         }
 
         if ( Mathf.Abs(vAxis) > 0.001f)
         {
-            transform.Rotate(Vector3.left, vAxis * Time.deltaTime * _rotationSensitivity);
+            transform.Rotate(Vector3.left, -vAxis * Time.deltaTime * _rotationSensitivity);
         }
 
         if ( Mathf.Abs(movex) > 0.001f)
@@ -55,7 +55,7 @@ public class gamepadController : MonoBehaviour
 
         if ( Mathf.Abs(movez) > 0.001f)
         {
-            transform.localPosition += transform.forward * movez * Time.deltaTime * _translationSensitivity;
+            transform.localPosition -= transform.forward * movez * Time.deltaTime * _translationSensitivity;
         }
         
         if ( Mathf.Abs(lTrigger) > 0.001f)

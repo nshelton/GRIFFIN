@@ -35,9 +35,9 @@ float _TFAR;
 //-------------------------------------
 //- DISTANCE FUNCTION
 
-float thresh(float3 p)
+float thresh(float distance)
 {
-    return _Threshold;
+    return  distance * _Threshold / 100;
 }
 
 float2 IFS(float3 p)
@@ -64,7 +64,8 @@ float2 IFS(float3 p)
          return float2(sDist, 5);
      }
      else*/
-    return float2(dd, 0);
+
+    return float2(dd, 0);                                                                                                                                           
 }
 
 float opSmoothIntersection(float d1, float d2, float k) {
@@ -74,17 +75,22 @@ float opSmoothIntersection(float d1, float d2, float k) {
 
 float2 DE(float3 p)
 {
-    // return polycrust(p);
+
+    float2 f = hartverdrahtet(p);
+    float d = max(f, -sdBox(p, float3(u_paramD.x, u_paramD.y, u_paramD.z)));
+
+    return float2(d, f.y);
     //float2 d = juliaTrap(p);
    // float d2 = p.y - u_paramD.x; // + d.y * u_paramD.y;
 
    // return float2(max(d.x, d2), d.y);
-    return tglad_variant(p);
+  //  return min(tglad_variant(p),);
+    // return tglad_variant(p);
 }
 
-float3 estimateNormal(in float3 pos)
+float3 estimateNormal(in float3 pos, in float d)
 {
-    float e = _Threshold;
+    float e = thresh(d);
     float3 eps = float3(e, 0.0, 0.0);
 
     return normalize(float3(
@@ -165,21 +171,6 @@ float rand()
 //-------------------------------------
 //- RAY
 
-struct Ray
-{
-    float3 origin;
-    float3 direction;
-    float3 energy;
-};
-
-Ray CreateRay(float3 origin, float3 direction)
-{
-    Ray ray;
-    ray.origin = origin;
-    ray.direction = direction;
-    ray.energy = float3(1.0f, 1.0f, 1.0f);
-    return ray;
-}
 
 Ray CreateCameraRay(float2 uv)
 {
@@ -254,10 +245,6 @@ RayHit MarchTrace(Ray ray)
     bool hit = false;
     int i = 0;
 
-    float lt = 0.0;
-    float lh = 0.0;
-
-
     for (; i < 2048; i++)
     {
         if (i > _Steps) // || (_Bounces <=1 && i > 100))
@@ -266,24 +253,17 @@ RayHit MarchTrace(Ray ray)
         pos = ray.origin + ray.direction * t;
         dd = DE(pos);
  
-        lt = t;
-        lh = dd.x;
-    
         t += dd.x * _StepRatio;
 
-        if (dd.x < _Threshold)
+        if (dd.x < thresh(t))
         {
-
             hit = true;
-           
             break;
         }
 
         if (t > _TFAR)
             break;
     }
-
-    //if (lt > _Threshold/2 && dd.x > 0.0) t = lt - lh * (t - lt) / (dd.x - lh);
 
     if (hit)
     {
@@ -293,7 +273,7 @@ RayHit MarchTrace(Ray ray)
 
         bestHit.distance = t;
         bestHit.position = ray.origin + t * ray.direction;
-        bestHit.normal = estimateNormal(pos);
+        bestHit.normal = estimateNormal(pos, t);
         //bestHit.albedo = palette((dd.x * 100000.0));
         bestHit.albedo = palette(dd.y);
         bestHit.specular = _Specular;
@@ -389,11 +369,11 @@ float3 Shade(inout Ray ray, RayHit hit)
  
         // Sample the skybox and write it
         float theta = acos(ray.direction.y) / -PI;
-        //float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
-        //return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+        // float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+        // return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
 
        return  lerp( _SkyColorA, _SkyColorB, 0.5 + 0.5 * theta) ;// *pow(max(0, dot(ray.direction, float3(0, -1, 0))), 4);
-      // return float3(0.5 + 0.5 * (ray.direction));
+    //   return float3(0.5 + 0.5 * (ray.direction));
     }
 }
 
@@ -414,11 +394,11 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     float avgDepth = 0;
     float3 avgResult = float3(0, 0, 0);
     
-    for (int spp = 0; spp < _SPP; spp++)
-    {
+    // for (int spp = 0; spp < _SPP; spp++)
+    // {
         float2 rand = float2(
-            rand_xorshift() * (1.2 / 4294967296.0), 
-            rand_xorshift() * (1.2 / 4294967296.0)) ;
+            rand_xorshift() * (1 / 4294967296.0), 
+            rand_xorshift() * (1 / 4294967296.0)) ;
         // Transform pixel to [-1,1] range
         float2 uv = float2((id.xy + rand) / float2(width, height) * 2.0f - 1.0f);
 
@@ -436,10 +416,11 @@ void CSMain(uint3 id : SV_DispatchThreadID)
             if (i == 0)
                 depth = hit.distance;
 
-            result += ray.energy * Shade(ray, hit);
-
             if (_Bounces <= 1) {
-                result = hit.albedo * (1.0 - hit.steps);
+                result = hit.albedo * ambientOcclusion(hit.position, estimateNormal(hit.position, hit.distance)) ;
+                result *= 1 - hit.steps;
+            } else {
+                result += ray.energy * Shade(ray, hit);
             }
 
             if (!any(ray.energy))
@@ -448,9 +429,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
         avgResult += result;
         avgDepth += depth;
-    }
-    avgResult /= _SPP;
-    avgDepth /= _SPP;
+    // }
+    // avgResult /= _SPP;
+    // avgDepth /= _SPP;
     
-    Result[id.xy] = float4(avgResult, 1);
+    Result[id.xy] = float4(result, depth);
 }

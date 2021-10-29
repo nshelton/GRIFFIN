@@ -112,6 +112,41 @@ float4 fromtwovectors(float3 u, float3 v)
     return float4(w.x, w.y, w.z, 0.5f * m);
 }
 
+
+
+float2 hartverdrahtet(float3 p) {
+
+    float3 cs = u_paramA.xyz;
+    float fs = u_paramA.w;
+
+    float3 fc = u_paramB.xyz;
+    float fu = u_paramB.w;
+    float orbit = 0.0;
+
+    float  fd = 0.763;
+   float dEfactor=1.;
+   //int fractal_iterations = 12;
+   for(int i=0;i<_LEVELS;i++){
+    float3 start = p;
+      //box folding
+      p=2.*clamp(p, -cs, cs)-p;
+      //inversion
+      float k=max(fs/dot(p,p),1.);
+      p*=k;
+      dEfactor*=k;
+      //julia seed
+      p+=fc;
+
+      orbit += length(start - p);
+   }
+   //call basic shape and scale its DE
+   //need to adjust fractal_distancemult with non zero julia seed
+   float rxy=length(p.xy)-fu;
+   //distance from pos to the pseudo kleinian basic shape ...
+   return float2(fd*max(rxy,abs(length(p.xy)*p.z)/sqrt(dot(p,p)))/abs(dEfactor), orbit);
+}
+
+/*
 // distance function from Hartverdrahtet
 // ( http://www.pouet.net/prod.php?which=59086 )
 float2 hartverdrahtet(float3 f)
@@ -130,9 +165,9 @@ float2 hartverdrahtet(float3 f)
 
         f = 2. * clamp(f, -cs, cs) - f;
         float c = max(fs / dot(f, f), 1.);
-        f = rotateX(f, u_paramC.x);
-        f = rotateY(f, u_paramC.y);
-        f = rotateZ(f, u_paramC.z);
+        //f = rotateX(f, u_paramC.x);
+       // f = rotateY(f, u_paramC.y);
+       // f = rotateZ(f, u_paramC.z);
         //sphereFold(f, u_paramC.w); // Sphere Inversion
         f *= c;
         v *= c;
@@ -148,6 +183,8 @@ float2 hartverdrahtet(float3 f)
     
     return float2(d, orbit);
 }
+*/
+
 
 float udBox(float3 p, float3 b)
 {
