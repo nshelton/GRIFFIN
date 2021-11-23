@@ -30,7 +30,7 @@ float3 deproject(float2 uv, float4x4 frameToWorld, float depth) {
     return origin + direction * depth;
 }
 
-[numthreads(64,64,1)]
+[numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     uint width, height;
@@ -58,15 +58,15 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     float distance = length(lastFrameDepth - calculatedDepth);
 
-    // float confidence = _ConfidenceConvergedLastFrame.SampleLevel(MyLinearClampSampler, pixel, 0).r;
+    float confidence = _ConfidenceConvergedLastFrame.SampleLevel(MyLinearClampSampler, lastUV, 0).r;
 
    // float3 lastFrameworldPos = mul(_WorldToThisFrame, float4(worldPos, 1)).z;
     // float depthDiff = abs(lastFrameDepthComputed - depth);
 
     // confidence += (0.01f / 1.0f + depthDiff);
 
-   /* // check if edge
-    int rad = 5;
+   // check if edge
+    int rad = 2;
     float upDepth = _ThisFrame.Load(id.xy + int2(0, rad)).a;
     float leftDepth = _ThisFrame.Load(id.xy + int2(rad, 0)).a;
     float downDepth = _ThisFrame.Load(id.xy + int2(0, -rad)).a;
@@ -76,22 +76,28 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         (depth - leftDepth) * (depth - leftDepth) +
         (depth - downDepth) * (depth - downDepth) +
         (depth - rightDepth) * (depth - rightDepth);
-    */
-    // out of bounds
-
+  
+    
+                                                                  
     // could this be real ? ? ???
     // float a = 1 / (1 + exp(-20 * distance + 2));
-    float a = clamp(distance+ 0.01,0,1);
+//    confidence *= 1.0/(distance + 0.001);
+    if (distance < 0.005 ) {
+        confidence += 1;
+    } else if (distance > 0.005) {
+        confidence *= 0.2;
 
-    if ( lastUV.x < 0 || lastUV.y < 0|| lastUV.x > 1 || lastUV.y > 1) { 
-        a = 1;
     }
 
-    float3 newColor = a * thisFrame.rgb + (1 - a) * lastFrame.rgb;
+    if ( lastUV.x < 0 || lastUV.y < 0|| lastUV.x > 1 || lastUV.y > 1 || depth > 100) { 
+        confidence = 1;
+    }
+
+    float3 newColor = ( 1.0/confidence) * thisFrame.rgb + (1.0 - 1.0/confidence) * lastFrame.rgb;
     //_Result[id.xy] = float4(saturate(newColor), confidence);
     _Result[id.xy] = float4(saturate(newColor), depth);
 
-    float confidence = 1;
-    _ResultConfidence[id.xy] = float4(saturate(confidence), 0, 0, 0);
+   
+    _ResultConfidence[id.xy] = float4(confidence, 0, 0, 0);
 
 }

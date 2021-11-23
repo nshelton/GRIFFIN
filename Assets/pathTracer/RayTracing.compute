@@ -1,7 +1,6 @@
 ﻿#pragma kernel CSMain
 
 RWTexture2D<float4> Result;
-RWTexture2D<float4> ResultDepth;
 
 float4x4 _CameraToWorld;
 float4x4 _CameraInverseProjection;
@@ -38,54 +37,6 @@ float _TFAR;
 float thresh(float distance)
 {
     return  distance * _Threshold / 100;
-}
-
-float2 IFS(float3 p)
-{
-    float3 z = p;
-    float3 Offset = u_paramB;
-    float Scale = u_paramA.x;
-
-    float r = 0;
-    int n = 0;
-    float dd = 99999;
-    while (n < _LEVELS) {
-        z = abs(z);
-        z = rotateX(z, u_paramC.x);
-        z = rotateY(z, u_paramC.y);
-        z = rotateZ(z, u_paramC.z);
-        z = z * Scale - Offset * (Scale - 1.0);
-        n++; 
-        dd = min(dd, sdBox(z, u_paramD.xyz));
-    }
-
-    /* if (sDist < fDist)
-     {
-         return float2(sDist, 5);
-     }
-     else*/
-
-    return float2(dd, 0);                                                                                                                                           
-}
-
-float opSmoothIntersection(float d1, float d2, float k) {
-    float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
-    return lerp(d2, d1, h) + k * h * (1.0 - h);
-}
-
-float2 DE(float3 p)
-{
-
-    float2 f = hartverdrahtet(p);
-    float d = max(f, -sdBox(p, float3(u_paramD.x, u_paramD.y, u_paramD.z)));
-
-    return float2(d, f.y);
-    //float2 d = juliaTrap(p);
-   // float d2 = p.y - u_paramD.x; // + d.y * u_paramD.y;
-
-   // return float2(max(d.x, d2), d.y);
-  //  return min(tglad_variant(p),);
-    // return tglad_variant(p);
 }
 
 float3 estimateNormal(in float3 pos, in float d)
@@ -268,7 +219,6 @@ RayHit MarchTrace(Ray ray)
     if (hit)
     {
         bestHit.steps = (float)i / _Steps;
-
         float emission = (float3)step(_EmisisonRange.x, dd.y) * (float3)step(dd.y, _EmisisonRange.y) * _EmisisonRange.z;
 
         bestHit.distance = t;
@@ -278,6 +228,11 @@ RayHit MarchTrace(Ray ray)
         bestHit.albedo = palette(dd.y);
         bestHit.specular = _Specular;
         bestHit.smoothness = _Smoothness;
+
+        if ( dd.y < 0) { 
+             emission = 1;
+         }
+
         bestHit.emission = bestHit.albedo * emission;
 
 

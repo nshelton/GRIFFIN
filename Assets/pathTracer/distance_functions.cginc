@@ -235,11 +235,59 @@ void boxFold(inout float3 z, inout float dz)
     z = clamp(z, -u_paramA.z, u_paramA.z) * 2.0 - z;
 }
 
+//https://www.shadertoy.com/view/4ds3zn
+float2 appolonian( float3 p)
+{
+    float s = u_paramA.y;
+	float scale = u_paramA.x;
+
+	float4 orb = (float4)1000.0; 
+	
+	for( int i=0; i<_LEVELS ;i++ )
+	{
+		p = -1.0 + 2.0*frac(0.5*p+0.5);
+        //p = rotate_vector(p, fromtwovectors(float3(0,1,0), u_paramB.xyz));
+
+		float r2 = dot(p,p);
+		
+        orb = min( orb, float4(abs(p),r2) );
+		
+		float k = s/r2;
+		p     *= k;
+		scale *= k;
+	}
+	
+	return float2(0.25*length(p)/scale, length(orb.y));
+}
+
+
+//https://www.shadertoy.com/view/4s3GW2
+float2 Hoskins( float3 p )
+{
+	p = p.xzy;
+	float scale = 1.;
+	for( int i=0; i < _LEVELS;i++ )
+	{
+		p = 2.0*clamp(p, -u_paramA.x, u_paramA.x) - p;
+		float r2 = dot(p,p);
+        //float r2 = dot(p,p+sin(p.z*.3)); //Alternate fractal
+		float k = max((2.)/(r2), .027);
+		p     *= k;
+		scale *= k;
+	}
+	float l = length(p.xy);
+	float rxy = l - 4.0;
+	float n = l * p.z;
+	rxy = max(rxy, -(n) / 4.);
+	return float2((rxy) / abs(scale), 1);
+}
+
+
 //----------------------------------------------------------------------------------------
 float2 MBOX(float3 z)
 {
     float3 offset = z;
-    float dr = 1.0;
+    float dr = 1;
 
     float Scale = u_paramA.w;
     float iter = 0.0;
@@ -396,4 +444,185 @@ float2 mandelbulb(float3 pos) {
 
 
     return float2( 0.5 * log(r) * r / dr, iter);
+}
+
+
+float2 rot2D (float2 q, float a)
+{
+  return q * cos (a) + q.yx * sin (a) * float2 (-1., 1.);
+}
+
+float2 IFSOLDERBOXY(float3 p) {
+    float s = u_paramA.x ;
+
+    float d = 1e5;
+    float orbit = 0.0;
+    float dp = d; 
+    float3 offs = u_paramB.xyz;
+
+    float amp = 1./s; // Analogous to layer amplitude.
+    float level = -1;
+
+    for(int i=0; i<_LEVELS; i++){
+        float p0 = p;
+        p.xy = rot2D(p.xy, u_paramC.z);
+        p.yz = rot2D(p.yz, u_paramC.x);
+        p.zx = rot2D(p.zx, u_paramC.y);
+
+        p = abs(p);
+
+        //mirrors
+        p.xy += step(p.x, p.y)*(p.yx - p.xy);
+        p.xz += step(p.x, p.z)*(p.zx - p.xz);
+        p.yz += step(p.y, p.z)*(p.zy - p.yz);
+        p=abs(p);
+
+        // Stretching about an offset.
+        p = p*s + offs*(1. - s);
+        p -= step(p, offs*(1. - s)*.5)*offs*(1. - s);
+
+        // p=abs(p);
+
+        d = max(-d, max(max(p.x, p.y), p.z)*amp);
+
+        // if ( dp != d){
+        //     level = i;
+        //     orbit ++;
+        // }
+
+        orbit += max(p.x, max(p.y, p.z));
+
+        dp = d;
+        amp /= s; 
+    }
+
+    return float2(d -  (u_paramA.z) * s , orbit);
+
+}
+
+float sdTorus( float3 p, float2 t )
+{
+  float2 q = float2(length(p.xz)-t.x,p.y);
+  return length(q)-t.y;
+}
+
+float2 IFS_LEVELS(float3 p){
+    float3 t = u_paramB.xyz;
+    float3 offs =  u_paramD.xyz;
+    float d = 1e10;
+    float s = 1.0;
+    float scale = u_paramA.x;
+
+    p += t; 
+    float level = 0;
+
+    for (int i = 0; i < _LEVELS; i++){
+  
+        p = p-t/s;
+        p = rotateX(p, u_paramC.x);
+        p = rotateY(p, u_paramC.y);
+        p = rotateZ(p, u_paramC.z);
+
+        p.x = abs(p.x);
+        p.y = abs(p.y);
+        p.z = abs(p.z);
+
+        float oldD = d;
+
+        // box
+       d = min	(d, udBox(p.xyz*s, offs)/s ) ;
+
+        // torus
+        // d = min	(d, sdTorus(p.xyz*s, offs.xy)/s ) ;
+        
+        // circle
+        //d = min(d, length(p - t) - u_paramA.y);
+
+        if ( d != oldD ) {
+            level = i;
+        }
+
+        s *= scale * scale;
+    }
+
+    if ( level ==  round(u_paramA.z) ||  level ==  round(u_paramA.w)) {
+        level = -1;
+    }
+
+    return float2(d, level);
+}
+
+
+
+
+float2 IFS(float3 p)
+{
+    float3 z = p;
+    float3 Offset = u_paramB;
+    float Scale = u_paramA.x;
+
+    float r = 0;
+    int n = 0;
+    float dd = 99999;
+    float level = -1;
+    for(int i = 0; i < _LEVELS; i ++) {
+        z = abs(z);
+        z = rotateX(z, u_paramC.x);
+        z = rotateY(z, u_paramC.y);
+        z = rotateZ(z, u_paramC.z);
+        z = z * Scale - Offset * (Scale - 1.0);
+        n++; 
+        
+        float oldD = dd;
+        dd = min(dd, sdBox(z, u_paramD.xyz));
+        if ( dd != oldD ) {
+            level = n;
+        }
+
+    }
+
+    /* if (sDist < fDist)
+     {
+         return float2(sDist, 5);
+     }
+     else*/
+ 
+    if (round(u_paramA.y) == level) {
+        level = -1;
+    } 
+
+    return float2(dd, level);                                                                                                                                           
+}
+
+float opSmoothIntersection(float d1, float d2, float k) {
+    float h = clamp(0.5 - 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    return lerp(d2, d1, h) + k * h * (1.0 - h);
+}
+
+float2 DE(float3 p)
+{
+
+//     float2 f = appolonian(p);
+//    // float d =  sdBox(p- u_paramC.xyz, float3(u_paramD.x, u_paramD.y, u_paramD.z));
+//     float d =  length(p - u_paramC.xyz ) - u_paramD.x;
+    
+//     if ( min(f.x, d) == f.x) {
+//         return f;
+//     } else {
+//         // -1 indicates emissive
+//         return float2(d, -1);
+//     }
+
+
+
+    return IFS_LEVELS(p);
+
+
+    // return float2(d, f.y);
+    //float2 d = juliaTrap(p);
+   // float d2 = p.y - u_paramD.x; // + d.y * u_paramD.y;
+
+   // return float2(max(d.x, d2), d.y);
+  //  return min(tglad_variant(p),);
+    // return tglad_variant(p);
 }

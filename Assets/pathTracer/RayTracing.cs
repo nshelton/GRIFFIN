@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.Recorder;
 using UnityEngine;
 using System.IO;
+using System;
 using UnityEngine.Playables;
 
 [ExecuteInEditMode]
@@ -34,7 +35,7 @@ public class RayTracing : MonoBehaviour
     public Vector2 ColorParam;
     [Range(0,6)]public float Gamma;
     [Range(0,1)] public float Saturation;
-    [Range(0,6)] public float Exposure;
+    [Range(0,16)] public float Exposure;
 
     [Header("Fractal Params")]
     public Transform m_quaternionTransform;
@@ -78,7 +79,7 @@ public class RayTracing : MonoBehaviour
     private float _customFixedDeltaTime = 1f/30f;
 
     private bool _previz = false;
-
+    private DateTime _StartTime;
 
     public RenderTexture Image
     {
@@ -102,6 +103,7 @@ public class RayTracing : MonoBehaviour
 
         _camera = GetComponent<Camera>();
         _transformsToWatch.Add(transform);
+        _StartTime = DateTime.Now;
     }
 
     public void SetDirty()
@@ -154,8 +156,8 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetTexture(0, "_SkyboxTexture", SkyboxTexture);
         RayTracingShader.SetMatrix("_CameraToWorld", _camera.cameraToWorldMatrix);
         RayTracingShader.SetMatrix("_CameraInverseProjection", _camera.projectionMatrix.inverse);
-        RayTracingShader.SetVector("_PixelOffset", 1024f * new Vector2(Random.value, Random.value));
-        RayTracingShader.SetFloat("_Seed", Random.value);
+        RayTracingShader.SetVector("_PixelOffset", 1024f * new Vector2(UnityEngine.Random.value, UnityEngine.Random.value));
+        RayTracingShader.SetFloat("_Seed", UnityEngine.Random.value);
 
         RayTracingShader.SetVector("u_paramA", ParamA);
         RayTracingShader.SetVector("u_paramB", ParamB);
@@ -186,7 +188,7 @@ public class RayTracing : MonoBehaviour
         RayTracingShader.SetFloat("_Steps", Steps);
         RayTracingShader.SetFloat("_LEVELS", Levels);
         RayTracingShader.SetFloat("_Gamma", Gamma);
-        RayTracingShader.SetFloat("_RNG", Random.value);
+        RayTracingShader.SetFloat("_RNG", UnityEngine.Random.value);
         RayTracingShader.SetFloat("_TFAR", _camera.farClipPlane);
 
 
@@ -259,11 +261,11 @@ public class RayTracing : MonoBehaviour
         RenderTexture.active = rt;
     }
 
-    private void Render(RenderTexture destination, float time)
+    private void Render(RenderTexture destination, double time)
     {
         if (Record)
         {
-            _timeline.time = time;
+          _timeline.time = time;
         }
         
         // Make sure we have a current render target
@@ -274,7 +276,6 @@ public class RayTracing : MonoBehaviour
 
         // Set the target and dispatch the compute shader
         RayTracingShader.SetTexture(0, "Result", _target );
-        RayTracingShader.SetTexture(0, "ResultDepth", _targetDepth);
         RayTracingShader.Dispatch(0, threadGroupsX, threadGroupsY, 1);
 
        if (Reproject)
@@ -284,7 +285,6 @@ public class RayTracing : MonoBehaviour
             ReprojectionShader.SetTexture(0, "_LastFrameConverged", _convergedLastFrame);
             ReprojectionShader.SetTexture(0, "_ConfidenceConvergedLastFrame", _confidenceConvergedLastFrame);
             ReprojectionShader.SetTexture(0, "_ThisFrame", _target);
-            ReprojectionShader.SetTexture(0, "_ThisFrameDepth", _targetDepth);
 
             ReprojectionShader.SetTexture(0, "_Result", _converged);
             ReprojectionShader.SetTexture(0, "_ResultConfidence", _confidenceConverged);
@@ -310,16 +310,18 @@ public class RayTracing : MonoBehaviour
     }
 
     bool didSave = false;
+    double fakeTime  = 0;
 
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
     {
         SetShaderParameters();
-        Debug.Log("_customFixedDeltaTime" +  _customFixedDeltaTime);
+
         if (!Record || _currentSample < (float)FrameSamples * ExposurePercent) {
             didSave = false;
-            Render(destination, _customFixedDeltaTime * (float)Time.frameCount);
+            Render(destination, fakeTime);
         }
-
+        fakeTime += _customFixedDeltaTime;
+        
         _currentSample++;
         m_worldToLastFrame = _camera.worldToCameraMatrix;
 
@@ -342,6 +344,14 @@ public class RayTracing : MonoBehaviour
             didSave = true;
             _currentSample = 0;
             _renderedFrameNum++;
+            
+            float pct = 100 * ((float)_renderedFrameNum  / (float)numFrames);
+            float elapsed = (float)( DateTime.Now - _StartTime).TotalSeconds;
+            float timePerFrame = elapsed / (float)_renderedFrameNum;
+            float remain = (float)(numFrames - _renderedFrameNum) * timePerFrame;
+
+            Debug.Log($"{pct:0.0}% \t {_renderedFrameNum} /{numFrames}\t { timePerFrame:0}s/frame \t \t {elapsed:0}s elapsed  {remain:0}s remain ");
+
             if (_renderedFrameNum > numFrames)
             {
                 EditorApplication.ExecuteMenuItem("Edit/Play");
